@@ -6,6 +6,20 @@ A [pi](https://pi.dev) extension that prevents `/model` (and `Ctrl+P` model cycl
 
 pi's `setModel()` unconditionally writes the new model to `settings.json`. A one-off switch silently becomes the default for every future session. There is no upstream opt-out (see pi issues [#5976](https://github.com/earendil-works/pi/issues/5976), [#4002](https://github.com/earendil-works/pi/issues/4002), [#5255](https://github.com/earendil-works/pi/issues/5255)). This extension restores the previous default after pi's write lands --- the in-session model still changes; only the persisted default is preserved.
 
+As far as I can tell, `/model` is the only interface that changes settings.json outside of `/settings` - and `defaultModel` suggests it should be a fixed configuration value instead of a toggle - but so far the team have not been interested in fixing this.
+
+## Risk
+
+This is a bit of a hack - pi writes the settings.json and then we write it again.  There's no better way to do this due to what's exposed to the extension system.
+
+There is some concurrency risk if you were to `/model` (or other) change in multiple sessions concurrently.   And there is definitely a problem when you have sessions that have not yet loaded this extension.
+
+## Design
+
+This new functionality is on by default - it's this authors opinion that this should have been default behavior anyway.   If you want to turn it off, `/model-lock off` will turn it off and retain that for the session (persists across reload/resume but not new.)
+
+
+
 ## Commands
 
 | Command | Description |
