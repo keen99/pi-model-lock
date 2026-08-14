@@ -119,6 +119,17 @@ export default function (pi: ExtensionAPI) {
       log("[session_start] failed to read entries: " + e);
     }
     log("\n=== model-lock loaded " + new Date().toISOString() + " (locked=" + locked + ", debug=" + debug + ") ===");
+    if (debug) {
+      try {
+        const s = readSettings();
+        log("[session_start] settings default: " + s.defaultProvider + "/" + s.defaultModel);
+      } catch (e) {
+        log("[session_start] settings read FAIL: " + e);
+      }
+      try {
+        log("[session_start] entries: " + ctx.sessionManager.getEntries().length);
+      } catch {}
+    }
   });
 
   function saveLocked(): void {
@@ -277,6 +288,9 @@ export default function (pi: ExtensionAPI) {
       } catch {}
     }, 200);
 
+    // log("  event dump:   " + JSON.stringify(event, null, 2).replace(/\n/g, "\n                "));
+    log("  file at entry: " + (() => { try { const s = readSettings(); return s.defaultProvider + "/" + s.defaultModel; } catch (e) { return "READ FAIL: " + e; } })());
+
     if (event?.source === "restore") {
       log("  SKIP: session restore source");
       return;  // session restore, legit
@@ -292,20 +306,38 @@ export default function (pi: ExtensionAPI) {
     // Wait for pi's write to land (file shows new model).
     // Same poll for both ON and OFF — we always observe.
     let landed = false;
+    let pollIters = 0;
+    const t0 = Date.now();
     for (let i = 0; i < 50; i++) {
+      pollIters = i + 1;
       const s = readSettings();
+      if (debug) {
+        log("    poll[" + i + "] file=" + s.defaultProvider + "/" + s.defaultModel + " target=" + newModel);
+      }
       if (s.defaultModel === newModel) { landed = true; break; }
       await sleep(10);
     }
-    log("  pi write landed: " + landed);
+    log("  file post-poll: " + (() => { try { const s = readSettings(); return s.defaultProvider + "/" + s.defaultModel; } catch (e) { return "READ FAIL: " + e; } })());
+    log("  pi write landed: " + landed + " (iters=" + pollIters + " ms=" + (Date.now() - t0) + ")");
 
     if (locked) {
       // ON: restore old file values
       const s = readSettings();
       s.defaultModel = oldModel;
       s.defaultProvider = oldProvider;
-      writeSettings(s);
+      try {
+        writeSettings(s);
+      } catch (e) {
+        log("  RESTORE WRITE FAIL: " + e);
+        throw e;
+      }
       log("  restored to:    " + s.defaultProvider + "/" + s.defaultModel);
+      if (debug) {
+        try {
+          const chk = readSettings();
+          log("  verify readback: " + chk.defaultProvider + "/" + chk.defaultModel + (chk.defaultModel === oldModel ? " OK" : " MISMATCH"));
+        } catch (e) { log("  verify readback FAIL: " + e); }
+      }
     } else {
       // OFF: just log what pi left in the file
       const s = readSettings();

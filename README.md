@@ -18,6 +18,17 @@ There is some concurrency risk if you were to `/model` (or other) change in mult
 
 This new functionality is on by default - it's this authors opinion that this should have been default behavior anyway.   If you want to turn it off, `/model-lock off` will turn it off and retain that for the session (persists across reload/resume but not new.)
 
+## Load order requirement (important)
+
+This extension depends on being the **first** extension to handle the `model_select` event. The restore logic snapshots `settings.json` synchronously at the top of its handler, before any `await`. It works because pi (0.75.x) queues its settings write as a microtask that only flushes when the event-loop yields — and the emit loop yields at the first `await` of the first async handler for that event.
+
+If another extension registered earlier in your `packages` list has an async `model_select` handler (any handler that awaits), the runner's `await` will flush pi's settings write to disk before this extension's handler runs. The snapshot then sees the *new* model and the lock silently becomes a no-op (worse: it restores the wrong value if it uses fallbacks).
+
+Fix: keep this extension at the **top** of the `packages` array in `~/.pi/agent/settings.json`, above any extension with a `model_select` handler (e.g. `pi-codex-accounts`).
+
+Symptom if order is wrong: `/model-lock debug on`, switch models, and the log shows `file at entry` equal to the model you just switched TO — meaning pi's write landed before this handler ran.
+
+
 
 
 ## Commands
