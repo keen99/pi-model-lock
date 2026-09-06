@@ -2,7 +2,12 @@
   "name": "pi-model-lock",
   "version": "1.0.0",
   "description": "pi extension: prevent /model from persisting the new model as the global default in settings.json",
-  "keywords": ["pi-package", "pi-extension", "model", "settings"],
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "model",
+    "settings"
+  ],
   "license": "MIT",
   "author": "David Raistrick",
   "homepage": "https://github.com/keen99/pi-model-lock",
@@ -18,9 +23,16 @@
     "check": "echo 'nothing to check'"
   },
   "pi": {
-    "extensions": ["./index.ts"]
+    "extensions": [
+      "./index.ts"
+    ]
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-coding-agent": {
+      "optional": true
+    }
   }
 }
