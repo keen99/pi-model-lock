@@ -62,3 +62,17 @@ pi install git:github.com/keen99/pi-model-lock
 ## License
 
 MIT
+
+## Development
+
+```sh
+npm install
+npm run check          # typecheck + unit tests (sandboxed settings, nothing real touched)
+npm run test:matrix    # RPC smoke against every published pi release >= 0.75.0 (cached installs)
+node test/rpc-smoke.mjs  # quick single-version smoke
+```
+
+- Tests resolve settings through `PI_CODING_AGENT_DIR`; point it at a temp dir and nothing outside is touched.
+- Unit tests simulate pi's settings write during `model_select` to exercise the restore poll.
+- `PI_TEST_BIN` overrides the pi binary used by smokes.
+- `PI_MATRIX` limits matrix versions; `PI_MATRIX_INCLUDE_PRERELEASE=1` adds rc/beta tags.

@@ -33,11 +33,13 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 
-const SETTINGS = "/Users/draistrick/.pi/agent/settings.json";
+// Resolved per call so tests can point PI_CODING_AGENT_DIR at a sandbox.
+const settingsPath = () => join(getAgentDir(), "settings.json");
 // Default for the per-session debug flag. Flip to true to default-debug every
 // new session; otherwise toggle at runtime with /model-lock debug.
 const DEBUG_DEFAULT = false;
@@ -57,11 +59,11 @@ interface DebugState {
 }
 
 function readSettings(): any {
-  return JSON.parse(readFileSync(SETTINGS, "utf-8"));
+  return JSON.parse(readFileSync(settingsPath(), "utf-8"));
 }
 
 function writeSettings(s: any): void {
-  writeFileSync(SETTINGS, JSON.stringify(s, null, 2) + "\n", "utf-8");
+  writeFileSync(settingsPath(), JSON.stringify(s, null, 2) + "\n", "utf-8");
 }
 
 function ensureDir(): void {
