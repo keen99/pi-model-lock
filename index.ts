@@ -34,9 +34,9 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync } from "fs";
+import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, realpathSync } from "fs";
 import { homedir } from "os";
-import { join } from "path";
+import { dirname, join } from "path";
 
 // Resolved per call so tests can point PI_CODING_AGENT_DIR at a sandbox.
 const settingsPath = () => join(getAgentDir(), "settings.json");
@@ -83,9 +83,91 @@ function parseArgs(raw: string | undefined): "on" | "off" | "status" | null {
   return null;
 }
 
-export default function (pi: ExtensionAPI) {
+// === Version awareness ===
+// pi >= 0.99.0 made /model session-scoped by default (setModel gained an
+// options.persist gate, default false; the picker's "set as default" action
+// is the only path that writes settings.json). The lock's job is pi-native
+// there, so on those versions this extension becomes warn-only: no hooks,
+// commands just point at the built-in replacement. <= 0.87.1 keeps full
+// behavior. Unknown version -> full behavior (correct for every pi that
+// needs the lock).
+export const WARN_MODE_FROM = { major: 0, minor: 99, patch: 0 };
+
+export interface Semver {
+  major: number;
+  minor: number;
+  patch: number;
+}
+
+export function parseSemver(v: string | null | undefined): Semver | null {
+  const m = /^(\d+)\.(\d+)\.(\d+)/.exec(v || "");
+  return m ? { major: +m[1], minor: +m[2], patch: +m[3] } : null;
+}
+
+export function compareSemver(a: Semver, b: Semver): number {
+  if (a.major !== b.major) return a.major - b.major;
+  if (a.minor !== b.minor) return a.minor - b.minor;
+  return a.patch - b.patch;
+}
+
+export function piWarnMode(version: string | null | undefined): boolean {
+  const p = parseSemver(version);
+  return p ? compareSemver(p, WARN_MODE_FROM) >= 0 : false;
+}
+
+// Walk up from the pi entry script (process.argv[1]) to the pi-coding-agent
+// package.json. In-process, no deep imports, works under every release.
+// argv[1] is usually a symlinked bin shim (nvm global bin) — resolve it first
+// or the walk starts in the wrong tree and finds nothing.
+export function detectPiVersion(entryScript: string | undefined): { version: string; root: string } | null {
+  let start = "";
+  if (entryScript) {
+    try {
+      start = realpathSync(entryScript);
+    } catch {
+      start = entryScript;
+    }
+  }
+  let dir = start ? dirname(start) : "";
+  for (let i = 0; i < 12 && dir; i++) {
+    try {
+      const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf-8"));
+      if (pkg?.name === "@earendil-works/pi-coding-agent" && typeof pkg.version === "string") {
+        return { version: pkg.version, root: dir };
+      }
+    } catch {}
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
+}
+
+export default function (pi: ExtensionAPI, forcedVersion?: string | null) {
   let locked = true; // default ON; refined to persisted value on session_start
   let debug = DEBUG_DEFAULT;
+
+  // pi >= 0.99.0: lock is native behavior -> warn-only mode (no hooks).
+  const detected = forcedVersion === undefined ? detectPiVersion(process.argv[1]) : null;
+  const piVersion = forcedVersion !== undefined ? forcedVersion : detected?.version ?? null;
+  const warnMode = piWarnMode(piVersion);
+
+  function notNeededNotice(): string {
+    return `model-lock: not needed on pi ${piVersion ?? "?"} — /model switches are session-scoped by default and never change settings.json. To change the default for new sessions: model picker (ctrl+l) → pick a model → ctrl+s ("set as default"). This extension does nothing here; safe to remove.`;
+  }
+  function saveReplacedNotice(): string {
+    return `model-save: replaced on pi ${piVersion ?? "?"} — use the model picker: ctrl+l to open, pick a model, ctrl+s ("set as default") writes settings.json natively.`;
+  }
+
+  // Matrix-smoke marker: which mode is active and against which pi.
+  if (process.env.MODEL_LOCK_DEBUG === "1") {
+    try {
+      writeFileSync(
+        join(getAgentDir(), "model-lock-mode.json"),
+        JSON.stringify({ piVersion, mode: warnMode ? "warn" : "lock" }, null, 2) + "\n",
+      );
+    } catch {}
+  }
 
   // Log to file only when debug is on.
   function log(line: string): void {
@@ -143,6 +225,10 @@ export default function (pi: ExtensionAPI) {
   }
 
   function runAction(action: "on" | "off" | "status", notify: (msg: string, level: "info" | "warning") => void) {
+    if (warnMode) {
+      notify(notNeededNotice(), "warning");
+      return;
+    }
     if (action === "status") {
       const state = locked
         ? "ON — /model changes only affect the current session; your global default in settings.json is preserved."
@@ -215,6 +301,10 @@ export default function (pi: ExtensionAPI) {
   pi.registerCommand("model-save", {
     description: "Persist the current session model as the new global default (one-time write, lock state unchanged)",
     handler: async (_args, ctx) => {
+      if (warnMode) {
+        ctx.ui.notify(saveReplacedNotice(), "warning");
+        return;
+      }
       const cur = ctx.model;
       const id = cur?.id;
       const provider = cur?.provider;
@@ -248,6 +338,10 @@ export default function (pi: ExtensionAPI) {
 
     // /modelsave alias — run the save logic inline
     if (text === "/modelsave" || text === "/modelsave ") {
+      if (warnMode) {
+        ctx.ui.notify(saveReplacedNotice(), "warning");
+        return { action: "handled" };
+      }
       const cur = ctx.model;
       const id = cur?.id;
       const provider = cur?.provider;
@@ -272,7 +366,9 @@ export default function (pi: ExtensionAPI) {
   // Only addition: logging moved ABOVE the `locked` check so we always see
   // model_select events regardless of lock state. The restore block itself
   // is unchanged.
-  pi.on("model_select", async (event: any, ctx: any) => {
+  // Restore hook — full mode only. pi >= 0.99.0 registers nothing: the lock
+  // is native behavior there and this extension stays out of the event path.
+  const onSelect = async (event: any, ctx: any) => {
     // Log FIRST, before any early return, so we always see model_select events
     // regardless of lock state.
     log("\n[model_select " + new Date().toISOString() + "]");
@@ -351,5 +447,6 @@ export default function (pi: ExtensionAPI) {
       const s = readSettings();
       log("  LOCK OFF — left as: " + s.defaultProvider + "/" + s.defaultModel);
     }
-  });
+  };
+  if (!warnMode) pi.on("model_select", onSelect);
 }

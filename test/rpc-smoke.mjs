@@ -50,7 +50,7 @@ writeFileSync(join(agentDir, 'auth.json'), JSON.stringify({
 const child = spawn(
 	process.env.PI_TEST_BIN ?? join(dirname(process.execPath), 'pi'),
 	['--mode', 'rpc', '--no-extensions', '-e', join(root, 'index.ts'), '--session-dir', sessions],
-	{ env: { ...process.env, PI_CODING_AGENT_DIR: agentDir, ZAI_API_KEY: 'sk-fake-zai', OPENAI_API_KEY: 'sk-fake-openai' }, cwd: dir },
+	{ env: { ...process.env, PI_CODING_AGENT_DIR: agentDir, MODEL_LOCK_DEBUG: '1', ZAI_API_KEY: 'sk-fake-zai', OPENAI_API_KEY: 'sk-fake-openai' }, cwd: dir },
 );
 const killTimer = setTimeout(() => child.kill('SIGKILL'), 60_000);
 let out = '';
@@ -80,6 +80,13 @@ child.stdout.on('data', (d) => {
 	if (stage === 'boot' && responses.has('deep-1')) {
 		const cmds = responses.get('deep-1').data?.commands ?? [];
 		assert2(cmds.some((c) => c.name === 'model-lock') && cmds.some((c) => c.name === 'model-save'), 'commands registered');
+		// Extension self-reports which mode it picked and for which pi.
+		const marker = JSON.parse(readFileSync(join(agentDir, 'model-lock-mode.json'), 'utf8'));
+		const m = /^(\d+)\.(\d+)\.(\d+)/.exec(marker.piVersion ?? '');
+		assert2(m, `marker has parseable piVersion; got ${JSON.stringify(marker)}`);
+		const expectWarn = (+m[1] > 0) || (+m[2] >= 99);
+		assert2(marker.mode === (expectWarn ? 'warn' : 'lock'), `mode ${marker.mode} matches pi ${marker.piVersion} (expected ${expectWarn ? 'warn' : 'lock'})`);
+		console.error(`  mode marker: pi ${marker.piVersion} -> ${marker.mode}`);
 		stage = 'models';
 		send({ type: 'get_available_models', id: 'm0' });
 	} else if (stage === 'models' && responses.has('m0')) {

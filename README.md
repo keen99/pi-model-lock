@@ -2,11 +2,27 @@
 
 A [pi](https://pi.dev) extension that prevents `/model` (and `Ctrl+P` model cycling / `Ctrl+L` model selector) from persisting the switched-to model as the global default in `~/.pi/agent/settings.json`.
 
+**Version-aware:** on pi ≤ 0.87.1 the extension does its full job (see below). On pi ≥ 0.99.0 it detects the running version and becomes **warn-only**: it registers no hooks and its commands just point at the built-in replacements, because pi itself made model switches session-scoped.
+
 ## Why
 
 pi's `setModel()` unconditionally writes the new model to `settings.json`. A one-off switch silently becomes the default for every future session. There is no upstream opt-out (see pi issues [#5976](https://github.com/earendil-works/pi/issues/5976), [#4002](https://github.com/earendil-works/pi/issues/4002), [#5255](https://github.com/earendil-works/pi/issues/5255)). This extension restores the previous default after pi's write lands --- the in-session model still changes; only the persisted default is preserved.
 
 As far as I can tell, `/model` is the only interface that changes settings.json outside of `/settings` - and `defaultModel` suggests it should be a fixed configuration value instead of a toggle - but so far the team have not been interested in fixing this.
+
+## pi version behavior
+
+| pi version | What this extension does |
+| --- | --- |
+| ≤ 0.87.1 | Full lock: snapshot settings, observe pi's write, restore `event.previousModel`. `/model-save` writes the default once. |
+| ≥ 0.99.0 | Warn-only. pi's `setModel()` gained an `options.persist` gate (default off): `/model` switches are session-scoped and never touch settings.json. The only path that persists is the model picker's explicit **set as default** action. |
+
+On pi ≥ 0.99.0 the built-in replacements are:
+
+- **Lock** → nothing needed; `/model` is already session-scoped.
+- **`/model-save`** → model picker (`Ctrl+L`) → pick a model → `Ctrl+S` (**"set as default"**).
+
+Commands still respond in warn mode so you are never left guessing; the version is detected from the running pi installation (no deep imports, no sidecar files). If the version cannot be determined, the extension falls back to full lock behavior — correct for every pi that needs it.
 
 ## Risk
 
@@ -35,10 +51,10 @@ Symptom if order is wrong: `/model-lock debug on`, switch models, and the log sh
 
 | Command | Description |
 | --- | --- |
-| `/model-lock` | Show lock status |
-| `/model-lock on` \| `off` | Enable / disable restore (default: ON) |
+| `/model-lock` | Show lock status (pi ≥ 0.99.0: explains it's not needed and names the built-in replacement) |
+| `/model-lock on` \| `off` | Enable / disable restore (default: ON; no-op on pi ≥ 0.99.0) |
 | `/modellock` | Alias, caught silently (not in slash menu) |
-| `/model-save` | Persist the CURRENT session model as the new global default (one-time write; lock state unchanged) |
+| `/model-save` | Persist the CURRENT session model as the new global default (one-time write; lock state unchanged). pi ≥ 0.99.0: replaced by the picker's set-as-default action (`Ctrl+L` → `Ctrl+S`) |
 | `/modelsave` | Alias, caught silently (not in slash menu) |
 | `/model-lock debug [on\|off]` | Toggle debug logging for this session (not advertised in the command description; no arg toggles) |
 | `/modellock debug` | Alias, caught silently |
