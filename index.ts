@@ -323,17 +323,23 @@ export default function (pi: ExtensionAPI) {
     log("  pi write landed: " + landed + " (iters=" + pollIters + " ms=" + (Date.now() - t0) + ")");
 
     if (locked) {
-      // ON: restore old file values
+      // ON: restore the previous default. pi writes settings BEFORE emitting
+      // model_select on current versions, so a file snapshot would capture the
+      // NEW value and restore would no-op. event.previousModel is the session
+      // model pi replaced — always the correct restore target.
       const s = readSettings();
-      s.defaultModel = oldModel;
-      s.defaultProvider = oldProvider;
+      const prev = event?.previousModel;
+      const restoreModel = typeof prev?.id === "string" && prev.id ? prev.id : oldModel;
+      const restoreProvider = typeof prev?.provider === "string" && prev.provider ? prev.provider : oldProvider;
+      s.defaultModel = restoreModel;
+      s.defaultProvider = restoreProvider;
       try {
         writeSettings(s);
       } catch (e) {
         log("  RESTORE WRITE FAIL: " + e);
         throw e;
       }
-      log("  restored to:    " + s.defaultProvider + "/" + s.defaultModel);
+      log(`  restored to:    ${restoreProvider}/${restoreModel} (from previousModel=${!!prev})`);
       if (debug) {
         try {
           const chk = readSettings();
