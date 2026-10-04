@@ -74,7 +74,7 @@ Lock on/off AND debug on/off persist across `/reload` of the same session, reset
 ## Install
 
 ```bash
-# authenticated (ssh — private repos)
+# ssh
 pi install git:git@github.com:keen99/pi-model-lock
 
 # public (https)
