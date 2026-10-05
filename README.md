@@ -1,5 +1,9 @@
 # pi-model-lock
 
+![CI](https://github.com/keen99/pi-model-lock/actions/workflows/ci.yml/badge.svg)
+![release-watch](https://github.com/keen99/pi-model-lock/actions/workflows/release-watch.yml/badge.svg)
+[![pi tested](https://img.shields.io/github/v/release/keen99/pi-model-lock?label=pi%20tested%200.75.0%20%E2%86%92)](https://github.com/keen99/pi-model-lock/releases)
+
 > ⚠️ **Lock proven on pi 0.75.0–0.87.1 only.** On pi ≥ 0.99.0, pi itself makes `/model` session-scoped (settings.json no longer changes), so this extension detects the new version and runs **warn-only** there — it does nothing except point you at the built-in replacement. See [pi version behavior](#pi-version-behavior). Safe to remove on pi ≥ 0.99.0.
 
 A [pi](https://pi.dev) extension that prevents `/model` (and `Ctrl+P` model cycling / `Ctrl+L` model selector) from persisting the switched-to model as the global default in `~/.pi/agent/settings.json`.

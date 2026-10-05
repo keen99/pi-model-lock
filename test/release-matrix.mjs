@@ -9,7 +9,7 @@
 //   PI_MATRIX="0.75.4,1.0.0" node test/release-matrix.mjs   # explicit list
 //   PI_MATRIX_INCLUDE_PRERELEASE=1 ...                  # also test rc/beta tags
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -59,6 +59,7 @@ function resolveVersions() {
 }
 
 let failed = 0;
+const results = [];
 const versions = await resolveVersions();
 for (const version of versions) {
   const prefix = join(cacheRoot, version);
@@ -70,6 +71,7 @@ for (const version of versions) {
       console.log(`[matrix] ${version}: INSTALL FAILED`);
       console.error(install.stderr?.slice(0, 500));
       failed++;
+      results.push({ version, ok: false });
       continue;
     }
   }
@@ -82,15 +84,26 @@ for (const version of versions) {
   const output = `${smoke.stdout ?? ''}${smoke.stderr ?? ''}`.trim();
   if (smoke.status === 0) {
     console.log(`[matrix] ${version}: PASS`);
+    results.push({ version, ok: true });
   } else {
     failed++;
+    results.push({ version, ok: false });
     console.log(`[matrix] ${version}: FAIL (exit ${smoke.status})`);
     console.error(output.slice(0, 2000));
   }
 }
 
+// Per-version truth, written even when versions fail — the tag-sync step
+// uses this to create/delete release tags so the badge never claims a
+// version the current code fails on.
+mkdirSync(cacheRoot, { recursive: true });
+writeFileSync(join(cacheRoot, 'matrix-results.json'), `${JSON.stringify(results, null, 2)}\n`);
+
 if (failed > 0) {
   console.error(`[matrix] ${failed}/${versions.length} version(s) failed`);
   process.exit(1);
 }
-console.log(`[matrix] all ${versions.length} version(s) pass`);
+
+const newest = versions[versions.length - 1];
+writeFileSync(join(cacheRoot, '.latest-tested'), `${newest}\n`);
+console.log(`[matrix] all ${versions.length} version(s) pass (0.75.0 → ${newest})`);
